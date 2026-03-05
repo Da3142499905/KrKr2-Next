@@ -119,5 +119,10 @@
   "unpackingProgress": "展開中...",
   "packComplete": "パック完了",
   "unpackComplete": "展開完了",
-  "xp3OperationFailed": "操作失敗：{error}"
+  "xp3OperationFailed": "操作失敗：{error}",
+
+  "launchGame": "ゲームを開始",
+  "copiedToClipboard": "クリップボードにコピーしました",
+  "gameFormat": "フォーマット",
+  "gamePath": "パス"
 }

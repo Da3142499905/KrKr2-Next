@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../models/game_info.dart';
 import '../services/game_manager.dart';
 import '../utils/xp3_utils.dart';
+import 'game_detail_page.dart';
 import 'game_page.dart';
 import 'settings_page.dart';
 import '../constants/prefs_keys.dart';
@@ -549,6 +550,20 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _openGameDetail(GameInfo game) async {
+    final result = await Navigator.of(context).push<GameDetailResult>(
+      MaterialPageRoute<GameDetailResult>(
+        builder: (_) => GameDetailPage(
+          game: game,
+          gameManager: _gameManager,
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    if (result.needsRefresh) setState(() {});
+    if (result.shouldLaunch) _launchGame(game);
+  }
+
   Future<void> _packUnpackGame(GameInfo game) async {
     final l10n = AppLocalizations.of(context)!;
     final isXp3 = game.path.toLowerCase().endsWith('.xp3');
@@ -690,48 +705,99 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  int _gridCrossAxisCount(double width) {
+    if (width >= 1200) return 5;
+    if (width >= 800) return 4;
+    if (width >= 400) return 3;
+    return 2;
+  }
+
+  List<GameInfo> get _sortedGames {
+    final sorted = List<GameInfo>.from(_gameManager.games)
+      ..sort((a, b) {
+        if (a.lastPlayed != null && b.lastPlayed != null) {
+          return b.lastPlayed!.compareTo(a.lastPlayed!);
+        }
+        if (a.lastPlayed != null) return -1;
+        if (b.lastPlayed != null) return 1;
+        return a.displayTitle.compareTo(b.displayTitle);
+      });
+    return sorted;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final games = _gameManager.games;
     final colorScheme = Theme.of(context).colorScheme;
+    final games = _sortedGames;
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
+    final topPadding = MediaQuery.of(context).padding.top;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.appTitle),
-        actions: [
-          // Engine status icon — only shown on desktop where engine switching is available.
-          if (!Platform.isAndroid && !Platform.isIOS)
-            Tooltip(
-              message: _engineMode == EngineMode.builtIn
-                  ? (_builtInAvailable
-                      ? l10n.builtInReady
-                      : l10n.builtInNotReady)
-                  : (_customDylibPath != null
-                      ? _customDylibPath!.split('/').last
-                      : l10n.customNotSet),
-              child: Icon(
-                _engineMode == EngineMode.builtIn
-                    ? Icons.inventory_2
-                    : Icons.extension,
-                color: _effectiveDylibPath != null
-                    ? colorScheme.primary
-                    : colorScheme.error,
-                size: 22,
-              ),
-            ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: l10n.settings,
-            onPressed: _openSettings,
-          ),
-        ],
-      ),
+      extendBodyBehindAppBar: true,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : games.isEmpty
-              ? _buildEmptyState(colorScheme, l10n)
-              : _buildGameList(games, colorScheme, l10n),
+          : CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: EdgeInsets.only(
+                    top: topPadding + 16,
+                    left: 20,
+                    right: 20,
+                    bottom: 8,
+                  ),
+                  sliver: SliverToBoxAdapter(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            l10n.appTitle,
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        if (isDesktop)
+                          Tooltip(
+                            message: _engineMode == EngineMode.builtIn
+                                ? (_builtInAvailable
+                                    ? l10n.builtInReady
+                                    : l10n.builtInNotReady)
+                                : (_customDylibPath != null
+                                    ? _customDylibPath!.split('/').last
+                                    : l10n.customNotSet),
+                            child: Icon(
+                              _engineMode == EngineMode.builtIn
+                                  ? Icons.inventory_2
+                                  : Icons.extension,
+                              color: _effectiveDylibPath != null
+                                  ? colorScheme.primary
+                                  : colorScheme.error,
+                              size: 22,
+                            ),
+                          ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: const Icon(Icons.settings),
+                          tooltip: l10n.settings,
+                          onPressed: _openSettings,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (games.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _buildEmptyState(colorScheme, l10n),
+                  )
+                else
+                  _buildGameGrid(games, l10n),
+                const SliverPadding(padding: EdgeInsets.only(bottom: 88)),
+              ],
+            ),
       floatingActionButton: Platform.isIOS
           ? Row(
               mainAxisSize: MainAxisSize.min,
@@ -794,46 +860,43 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildGameList(
-      List<GameInfo> games, ColorScheme colorScheme, AppLocalizations l10n) {
-    final sorted = List<GameInfo>.from(games)
-      ..sort((a, b) {
-        if (a.lastPlayed != null && b.lastPlayed != null) {
-          return b.lastPlayed!.compareTo(a.lastPlayed!);
-        }
-        if (a.lastPlayed != null) return -1;
-        if (b.lastPlayed != null) return 1;
-        return a.displayTitle.compareTo(b.displayTitle);
-      });
-
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 800),
-          child: ListView.builder(
-            itemCount: sorted.length,
-            itemBuilder: (context, index) {
-              final game = sorted[index];
-              return _GameCard(
-                game: game,
-                l10n: l10n,
-                onTap: () => _launchGame(game),
-                onRename: () => _renameGame(game),
-                onRemove: () => _removeGame(game),
-                onSetCover: () => _setCoverImage(game),
-                onPackUnpack: () => _packUnpackGame(game),
-              );
-            },
+  Widget _buildGameGrid(List<GameInfo> games, AppLocalizations l10n) {
+    return SliverLayoutBuilder(
+      builder: (context, constraints) {
+        final crossAxisCount = _gridCrossAxisCount(constraints.crossAxisExtent);
+        return SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 3 / 4,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final game = games[index];
+                return _CoverCard(
+                  game: game,
+                  l10n: l10n,
+                  onTap: () => _openGameDetail(game),
+                  onRename: () => _renameGame(game),
+                  onRemove: () => _removeGame(game),
+                  onSetCover: () => _setCoverImage(game),
+                  onPackUnpack: () => _packUnpackGame(game),
+                );
+              },
+              childCount: games.length,
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
-class _GameCard extends StatelessWidget {
-  const _GameCard({
+class _CoverCard extends StatelessWidget {
+  const _CoverCard({
     required this.game,
     required this.l10n,
     required this.onTap,
@@ -853,139 +916,177 @@ class _GameCard extends StatelessWidget {
 
   bool get _isXp3 => game.path.toLowerCase().endsWith('.xp3');
 
+  bool get _hasCover =>
+      game.coverPath != null && File(game.coverPath!).existsSync();
+
+  void _showContextMenu(BuildContext context) {
+    final RenderBox box = context.findRenderObject() as RenderBox;
+    final Offset offset = box.localToGlobal(Offset.zero);
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        offset.dx + box.size.width,
+        offset.dy,
+        offset.dx + box.size.width,
+        offset.dy + box.size.height,
+      ),
+      items: [
+        PopupMenuItem(value: 'cover', child: _menuTile(Icons.image, l10n.setCover)),
+        PopupMenuItem(value: 'rename', child: _menuTile(Icons.edit, l10n.rename)),
+        PopupMenuItem(
+          value: 'pack_unpack',
+          child: _menuTile(
+            _isXp3 ? Icons.unarchive : Icons.archive,
+            _isXp3 ? l10n.unpackXp3 : l10n.packXp3,
+          ),
+        ),
+        PopupMenuItem(
+          value: 'remove',
+          child: _menuTile(Icons.delete, l10n.remove, color: Colors.redAccent),
+        ),
+      ],
+    ).then((value) {
+      if (value == null) return;
+      switch (value) {
+        case 'cover':
+          onSetCover();
+        case 'rename':
+          onRename();
+        case 'pack_unpack':
+          onPackUnpack();
+        case 'remove':
+          onRemove();
+      }
+    });
+  }
+
+  static Widget _menuTile(IconData icon, String label, {Color? color}) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: color),
+        const SizedBox(width: 12),
+        Text(label, style: color != null ? TextStyle(color: color) : null),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final lastPlayed = game.lastPlayed;
-    final String subtitle = lastPlayed != null
-        ? '${game.path}\n${l10n.lastPlayed(_formatDate(lastPlayed))}'
-        : game.path;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
+      clipBehavior: Clip.antiAlias,
+      elevation: 1,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                  image: game.coverPath != null && File(game.coverPath!).existsSync()
-                      ? DecorationImage(
-                          image: FileImage(File(game.coverPath!)),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                ),
-                child: game.coverPath != null && File(game.coverPath!).existsSync()
-                    ? null
-                    : Icon(
-                        Icons.videogame_asset,
-                        color: colorScheme.onPrimaryContainer,
-                        size: 28,
-                      ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      game.displayTitle,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color:
-                                colorScheme.onSurface.withValues(alpha: 0.6),
-                          ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              PopupMenuButton<String>(
-                onSelected: (value) {
-                  switch (value) {
-                    case 'cover':
-                      onSetCover();
-                      break;
-                    case 'rename':
-                      onRename();
-                      break;
-                    case 'pack_unpack':
-                      onPackUnpack();
-                      break;
-                    case 'remove':
-                      onRemove();
-                      break;
-                  }
-                },
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: 'cover',
-                    child: ListTile(
-                      leading: const Icon(Icons.image),
-                      title: Text(l10n.setCover),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'rename',
-                    child: ListTile(
-                      leading: const Icon(Icons.edit),
-                      title: Text(l10n.rename),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'pack_unpack',
-                    child: ListTile(
-                      leading: Icon(_isXp3
-                          ? Icons.unarchive
-                          : Icons.archive),
-                      title: Text(_isXp3
-                          ? l10n.unpackXp3
-                          : l10n.packXp3),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'remove',
-                    child: ListTile(
-                      leading:
-                          const Icon(Icons.delete, color: Colors.redAccent),
-                      title: Text(l10n.remove,
-                          style: const TextStyle(color: Colors.redAccent)),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.play_circle_fill,
-                color: colorScheme.primary,
-                size: 36,
-              ),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _buildBackground(colorScheme),
+          _buildGradientOverlay(),
+          _buildTitleOverlay(game),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              onLongPress: () => _showContextMenu(context),
+              onSecondaryTap: () => _showContextMenu(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBackground(ColorScheme colorScheme) {
+    if (_hasCover) {
+      return Image.file(
+        File(game.coverPath!),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildPlaceholder(colorScheme),
+      );
+    }
+    return _buildPlaceholder(colorScheme);
+  }
+
+  Widget _buildPlaceholder(ColorScheme colorScheme) {
+    final hash = game.path.hashCode;
+    final hue = (hash % 360).abs().toDouble();
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            HSLColor.fromAHSL(1, hue, 0.4, 0.3).toColor(),
+            HSLColor.fromAHSL(1, (hue + 40) % 360, 0.5, 0.15).toColor(),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.videogame_asset,
+          size: 48,
+          color: Colors.white.withValues(alpha: 0.35),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGradientOverlay() {
+    return const Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: 80,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.transparent,
+              Colors.black54,
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTitleOverlay(GameInfo game) {
+    final lastPlayed = game.lastPlayed;
+    return Positioned(
+      left: 12,
+      right: 12,
+      bottom: 10,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            game.displayTitle,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              height: 1.2,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (lastPlayed != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              _formatDate(lastPlayed),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

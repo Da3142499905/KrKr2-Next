@@ -347,4 +347,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String xp3OperationFailed(String error) {
     return 'Operation failed: $error';
   }
+
+  @override
+  String get launchGame => 'Launch Game';
+
+  @override
+  String get copiedToClipboard => 'Copied to clipboard';
+
+  @override
+  String get gameFormat => 'Format';
+
+  @override
+  String get gamePath => 'Path';
 }

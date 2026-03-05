@@ -336,4 +336,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String xp3OperationFailed(String error) {
     return '操作失败：$error';
   }
+
+  @override
+  String get launchGame => '启动游戏';
+
+  @override
+  String get copiedToClipboard => '已复制到剪贴板';
+
+  @override
+  String get gameFormat => '格式';
+
+  @override
+  String get gamePath => '路径';
 }

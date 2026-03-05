@@ -723,6 +723,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Operation failed: {error}'**
   String xp3OperationFailed(String error);
+
+  /// No description provided for @launchGame.
+  ///
+  /// In en, this message translates to:
+  /// **'Launch Game'**
+  String get launchGame;
+
+  /// No description provided for @copiedToClipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied to clipboard'**
+  String get copiedToClipboard;
+
+  /// No description provided for @gameFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Format'**
+  String get gameFormat;
+
+  /// No description provided for @gamePath.
+  ///
+  /// In en, this message translates to:
+  /// **'Path'**
+  String get gamePath;
 }
 
 class _AppLocalizationsDelegate

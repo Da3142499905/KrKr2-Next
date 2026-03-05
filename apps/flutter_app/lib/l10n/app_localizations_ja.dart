@@ -338,4 +338,16 @@ class AppLocalizationsJa extends AppLocalizations {
   String xp3OperationFailed(String error) {
     return '操作失敗：$error';
   }
+
+  @override
+  String get launchGame => 'ゲームを開始';
+
+  @override
+  String get copiedToClipboard => 'クリップボードにコピーしました';
+
+  @override
+  String get gameFormat => 'フォーマット';
+
+  @override
+  String get gamePath => 'パス';
 }
