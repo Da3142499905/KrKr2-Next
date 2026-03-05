@@ -38,6 +38,12 @@
   "engineNotFoundCustom": "エンジンdylibが設定されていません。先に設定で構成してください。",
 
   "lastPlayed": "最終プレイ：{time}",
+  "playDuration": "プレイ時間 {duration}",
+  "@playDuration": {
+    "placeholders": {
+      "duration": { "type": "String" }
+    }
+  },
   "rename": "名前変更",
   "setCover": "カバーを設定",
   "coverFromGallery": "ギャラリーから選択",

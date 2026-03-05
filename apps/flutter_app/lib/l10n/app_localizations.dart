@@ -280,6 +280,12 @@ abstract class AppLocalizations {
   /// **'Last played: {time}'**
   String lastPlayed(String time);
 
+  /// No description provided for @playDuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Played {duration}'**
+  String playDuration(String duration);
+
   /// No description provided for @rename.
   ///
   /// In en, this message translates to:

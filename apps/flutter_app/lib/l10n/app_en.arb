@@ -53,6 +53,12 @@
       "time": { "type": "String" }
     }
   },
+  "playDuration": "Played {duration}",
+  "@playDuration": {
+    "placeholders": {
+      "duration": { "type": "String" }
+    }
+  },
   "rename": "Rename",
   "setCover": "Set Cover",
   "coverFromGallery": "Choose from Gallery",

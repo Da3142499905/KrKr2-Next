@@ -111,6 +111,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String playDuration(String duration) {
+    return 'Played $duration';
+  }
+
+  @override
   String get rename => 'Rename';
 
   @override

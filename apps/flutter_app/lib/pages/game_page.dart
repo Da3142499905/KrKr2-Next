@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../engine/engine_bridge.dart';
 import '../engine/flutter_engine_bridge_adapter.dart';
 import '../constants/prefs_keys.dart';
+import '../services/game_manager.dart';
 import '../widgets/engine_surface.dart';
 import '../widgets/performance_overlay.dart';
 
@@ -21,12 +23,16 @@ class GamePage extends StatefulWidget {
     this.ffiLibraryPath,
     this.engineBridgeBuilder = createEngineBridge,
     this.forceLandscape = true,
+    this.gameManager,
   });
 
   final String gamePath;
   final String? ffiLibraryPath;
   final EngineBridgeBuilder engineBridgeBuilder;
   final bool forceLandscape;
+
+  /// If set, play duration is recorded when leaving this page.
+  final GameManager? gameManager;
 
   @override
   State<GamePage> createState() => _GamePageState();
@@ -83,9 +89,16 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
   Timer? _memoryStatsTimer;
   bool _memoryStatsPollInFlight = false;
 
+  /// When the game page was entered; used to compute play duration on exit.
+  DateTime? _sessionStartTime;
+
   @override
   void initState() {
     super.initState();
+    _sessionStartTime = DateTime.now();
+    if (widget.gameManager != null) {
+      unawaited(_savePendingPlaySession());
+    }
     WidgetsBinding.instance.addObserver(this);
     _forceLandscape = widget.forceLandscape;
     _bridge = widget.engineBridgeBuilder(ffiLibraryPath: widget.ffiLibraryPath);
@@ -104,8 +117,32 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _savePendingPlaySession() async {
+    if (_sessionStartTime == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      PrefsKeys.pendingPlaySession,
+      jsonEncode({
+        'path': widget.gamePath,
+        'startTime': _sessionStartTime!.toIso8601String(),
+      }),
+    );
+  }
+
+  Future<void> _clearPendingPlaySession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(PrefsKeys.pendingPlaySession);
+  }
+
   @override
   void dispose() {
+    if (widget.gameManager != null && _sessionStartTime != null) {
+      final seconds = DateTime.now().difference(_sessionStartTime!).inSeconds;
+      if (seconds > 0 && seconds <= 86400) {
+        widget.gameManager!.addPlayDuration(widget.gamePath, seconds);
+      }
+      unawaited(_clearPendingPlaySession());
+    }
     _stopStartupPolling();
     _stopMemoryStatsPolling();
     _bootLogScrollController.dispose();

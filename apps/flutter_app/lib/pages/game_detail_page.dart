@@ -303,9 +303,6 @@ class _GameDetailPageState extends State<GameDetailPage> {
   }
 
   Widget _buildCoverAppBar(ColorScheme colorScheme) {
-    final hash = game.path.hashCode;
-    final hue = (hash % 360).abs().toDouble();
-
     return SliverAppBar(
       expandedHeight: 260,
       pinned: true,
@@ -321,41 +318,10 @@ class _GameDetailPageState extends State<GameDetailPage> {
               Image.file(
                 File(game.coverPath!),
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        HSLColor.fromAHSL(1, hue, 0.4, 0.3).toColor(),
-                        HSLColor.fromAHSL(1, (hue + 40) % 360, 0.5, 0.15)
-                            .toColor(),
-                      ],
-                    ),
-                  ),
-                ),
+                errorBuilder: (_, __, ___) => _buildPlaceholderBar(colorScheme),
               )
             else
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      HSLColor.fromAHSL(1, hue, 0.4, 0.3).toColor(),
-                      HSLColor.fromAHSL(1, (hue + 40) % 360, 0.5, 0.15)
-                          .toColor(),
-                    ],
-                  ),
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.videogame_asset,
-                    size: 72,
-                    color: Colors.white.withValues(alpha: 0.25),
-                  ),
-                ),
-              ),
+              _buildPlaceholderBar(colorScheme),
             const DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -380,6 +346,28 @@ class _GameDetailPageState extends State<GameDetailPage> {
           onPressed: _setCover,
         ),
       ],
+    );
+  }
+
+  Widget _buildPlaceholderBar(ColorScheme colorScheme) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colorScheme.surfaceContainerHigh,
+            colorScheme.surfaceContainerHighest,
+          ],
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.videogame_asset,
+          size: 72,
+          color: colorScheme.primary.withValues(alpha: 0.5),
+        ),
+      ),
     );
   }
 
@@ -418,6 +406,14 @@ class _GameDetailPageState extends State<GameDetailPage> {
             _infoRow(
               Icons.schedule,
               l10n.lastPlayed(_formatDate(lastPlayed, l10n)),
+              colorScheme,
+            ),
+          ],
+          if ((game.playDurationSeconds ?? 0) >= 60) ...[
+            const SizedBox(height: 8),
+            _infoRow(
+              Icons.timer_outlined,
+              l10n.playDuration(GameInfo.formatPlayDuration(game.playDurationSeconds!)),
               colorScheme,
             ),
           ],

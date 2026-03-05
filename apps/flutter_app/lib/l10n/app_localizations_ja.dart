@@ -108,6 +108,11 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String playDuration(String duration) {
+    return 'プレイ時間 $duration';
+  }
+
+  @override
   String get rename => '名前変更';
 
   @override

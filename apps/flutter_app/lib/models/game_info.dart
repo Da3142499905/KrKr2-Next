@@ -7,6 +7,7 @@ class GameInfo {
     this.title,
     this.lastPlayed,
     this.coverPath,
+    this.playDurationSeconds,
   });
 
   /// The root directory of the game.
@@ -21,6 +22,9 @@ class GameInfo {
   /// Custom cover image path. Null means use default icon.
   String? coverPath;
 
+  /// Total play time in seconds. Updated when leaving the game page.
+  int? playDurationSeconds;
+
   /// Display name: user-set title or the last directory component.
   String get displayTitle {
     if (title != null && title!.isNotEmpty) return title!;
@@ -28,11 +32,23 @@ class GameInfo {
     return parts.lastWhere((p) => p.isNotEmpty, orElse: () => path);
   }
 
+  /// Format total play seconds as "45m" or "2h 30m".
+  static String formatPlayDuration(int seconds) {
+    if (seconds < 60) return '0m';
+    final minutes = seconds ~/ 60;
+    if (minutes < 60) return '${minutes}m';
+    final hours = minutes ~/ 60;
+    final mins = minutes % 60;
+    if (mins == 0) return '${hours}h';
+    return '${hours}h ${mins}m';
+  }
+
   Map<String, dynamic> toJson() => {
         'path': path,
         'title': title,
         'lastPlayed': lastPlayed?.toIso8601String(),
         'coverPath': coverPath,
+        'playDurationSeconds': playDurationSeconds,
       };
 
   factory GameInfo.fromJson(Map<String, dynamic> json) => GameInfo(
@@ -42,6 +58,7 @@ class GameInfo {
             ? DateTime.tryParse(json['lastPlayed'] as String)
             : null,
         coverPath: json['coverPath'] as String?,
+        playDurationSeconds: json['playDurationSeconds'] as int?,
       );
 
   static List<GameInfo> listFromJsonString(String jsonString) {

@@ -106,6 +106,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String playDuration(String duration) {
+    return '已玩 $duration';
+  }
+
+  @override
   String get rename => '重命名';
 
   @override

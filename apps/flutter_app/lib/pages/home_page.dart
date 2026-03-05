@@ -101,6 +101,7 @@ class _HomePageState extends State<HomePage> {
     _angleBackend = prefs.getString(PrefsKeys.angleBackend) ?? PrefsKeys.angleBackendGles;
     _forceLandscape = prefs.getBool(PrefsKeys.forceLandscape) ?? true;
     await _gameManager.load();
+    await _gameManager.applyPendingPlaySession();
 
     if (Platform.isIOS) {
       await _initIosGamesDir();
@@ -545,6 +546,7 @@ class _HomePageState extends State<HomePage> {
           gamePath: game.path,
           ffiLibraryPath: dylibPath,
           forceLandscape: _forceLandscape,
+          gameManager: _gameManager,
         ),
       ),
     );
@@ -1011,16 +1013,15 @@ class _CoverCard extends StatelessWidget {
   }
 
   Widget _buildPlaceholder(ColorScheme colorScheme) {
-    final hash = game.path.hashCode;
-    final hue = (hash % 360).abs().toDouble();
+    // 中性表面色做底，主题色只用在图标上，避免整块饱和色
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            HSLColor.fromAHSL(1, hue, 0.4, 0.3).toColor(),
-            HSLColor.fromAHSL(1, (hue + 40) % 360, 0.5, 0.15).toColor(),
+            colorScheme.surfaceContainerHigh,
+            colorScheme.surfaceContainerHighest,
           ],
         ),
       ),
@@ -1028,7 +1029,7 @@ class _CoverCard extends StatelessWidget {
         child: Icon(
           Icons.videogame_asset,
           size: 48,
-          color: Colors.white.withValues(alpha: 0.35),
+          color: colorScheme.primary.withValues(alpha: 0.6),
         ),
       ),
     );
@@ -1057,6 +1058,8 @@ class _CoverCard extends StatelessWidget {
 
   Widget _buildTitleOverlay(GameInfo game) {
     final lastPlayed = game.lastPlayed;
+    final totalSeconds = game.playDurationSeconds ?? 0;
+    final hasDuration = totalSeconds >= 60;
     return Positioned(
       left: 12,
       right: 12,
@@ -1076,10 +1079,13 @@ class _CoverCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          if (lastPlayed != null) ...[
+          if (lastPlayed != null || hasDuration) ...[
             const SizedBox(height: 2),
             Text(
-              _formatDate(lastPlayed),
+              [
+                if (lastPlayed != null) _formatDate(lastPlayed),
+                if (hasDuration) l10n.playDuration(GameInfo.formatPlayDuration(totalSeconds)),
+              ].join(' · '),
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.6),
                 fontSize: 11,

@@ -38,6 +38,12 @@
   "engineNotFoundCustom": "引擎 dylib 未设置。请先在设置中进行配置。",
 
   "lastPlayed": "上次游玩：{time}",
+  "playDuration": "已玩 {duration}",
+  "@playDuration": {
+    "placeholders": {
+      "duration": { "type": "String" }
+    }
+  },
   "rename": "重命名",
   "setCover": "设置封面",
   "coverFromGallery": "从相册选择",
