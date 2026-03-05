@@ -10,18 +10,38 @@ import '../models/game_metadata_candidate.dart';
 class CoverDownloader {
   final http.Client _client = http.Client();
 
+  /// Headers sent when fetching images (e.g. VNDB CDN). Some image servers
+  /// respond faster or only when Referer/User-Agent look like a browser from vndb.org.
+  static const Map<String, String> imageRequestHeaders = {
+    'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/119.0',
+    'Referer': 'https://vndb.org/',
+  };
+
   /// Download cover for [candidate] to covers/<source>_<sourceId>.<ext>.
+  /// Prefers thumbnail (faster, avoids R18 full-size 403); falls back to full image.
   /// Returns the local path, or null if download fails.
   Future<String?> downloadCover(GameMetadataCandidate candidate) async {
-    if (candidate.coverImageUrl.isEmpty) return null;
+    final urls = [
+      if (candidate.thumbnailUrl != null && candidate.thumbnailUrl!.isNotEmpty)
+        candidate.thumbnailUrl!,
+      if (candidate.coverImageUrl.isNotEmpty) candidate.coverImageUrl,
+    ];
+    for (final url in urls) {
+      final path = await _downloadToCovers(url, candidate);
+      if (path != null) return path;
+    }
+    return null;
+  }
 
-    final uri = Uri.tryParse(candidate.coverImageUrl);
+  Future<String?> _downloadToCovers(String imageUrl, GameMetadataCandidate candidate) async {
+    final uri = Uri.tryParse(imageUrl);
     if (uri == null || !uri.hasScheme) return null;
 
     try {
       final response = await _client
-          .get(uri)
-          .timeout(const Duration(seconds: 15));
+          .get(uri, headers: imageRequestHeaders)
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
         return null;

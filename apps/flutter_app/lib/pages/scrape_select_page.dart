@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/game_info.dart';
 import '../models/game_metadata_candidate.dart';
+import '../services/cover_downloader.dart';
 import '../services/game_manager.dart';
 import '../services/game_metadata_scraper.dart';
 
@@ -33,6 +34,47 @@ class _ScrapeSelectPageState extends State<ScrapeSelectPage> {
   GameInfo get game => widget.game;
   GameManager get gameManager => widget.gameManager;
   GameMetadataScraper get scraper => widget.scraper;
+
+  Widget _buildCandidateLeading(GameMetadataCandidate c) {
+    // 列表默认用缩略图，加载快且避免 R18 主图 403
+    final displayUrl = (c.thumbnailUrl != null && c.thumbnailUrl!.isNotEmpty)
+        ? c.thumbnailUrl!
+        : c.coverImageUrl;
+    if (displayUrl.isEmpty) {
+      return const SizedBox(
+        width: 48,
+        height: 48,
+        child: Icon(Icons.image_not_supported_outlined),
+      );
+    }
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: Image.network(
+        displayUrl,
+        fit: BoxFit.cover,
+        headers: CoverDownloader.imageRequestHeaders,
+        errorBuilder: (_, __, ___) => const Icon(
+          Icons.broken_image_outlined,
+          size: 48,
+        ),
+        loadingBuilder: (_, child, progress) =>
+            progress == null
+                ? child
+                : const SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  ),
+      ),
+    );
+  }
 
   Future<void> _confirm() async {
     final l10n = AppLocalizations.of(context)!;
@@ -108,42 +150,7 @@ class _ScrapeSelectPageState extends State<ScrapeSelectPage> {
                       final c = candidates[index];
                       final isSelected = _selected == c;
                       return ListTile(
-                        leading: c.coverImageUrl.isNotEmpty
-                            ? SizedBox(
-                                width: 48,
-                                height: 48,
-                                child: Image.network(
-                                  c.coverImageUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Icon(
-                                    Icons.broken_image_outlined,
-                                    size: 48,
-                                  ),
-                                  loadingBuilder: (_, child, progress) =>
-                                      progress == null
-                                          ? child
-                                          : const SizedBox(
-                                              width: 48,
-                                              height: 48,
-                                              child: Center(
-                                                child:
-                                                    SizedBox(
-                                                      width: 24,
-                                                      height: 24,
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                            strokeWidth: 2,
-                                                          ),
-                                                    ),
-                                              ),
-                                            ),
-                                ),
-                              )
-                            : const SizedBox(
-                                width: 48,
-                                height: 48,
-                                child: Icon(Icons.image_not_supported_outlined),
-                              ),
+                        leading: _buildCandidateLeading(c),
                         title: Text(c.title),
                         subtitle: c.sourceLabel != null
                             ? Text(
@@ -152,7 +159,7 @@ class _ScrapeSelectPageState extends State<ScrapeSelectPage> {
                               )
                             : null,
                         selected: isSelected,
-                        onTap: () => setState(() => _selected = c),
+                                        onTap: () => setState(() => _selected = c),
                       );
                     },
                   ),
