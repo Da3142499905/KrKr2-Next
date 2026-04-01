@@ -42,6 +42,10 @@ jobs:
       CPPFLAGS: -DCSM_TARGET_IPHONE_ES2=1
       CFLAGS: -DCSM_TARGET_IPHONE_ES2=1
       CXXFLAGS: -DCSM_TARGET_IPHONE_ES2=1
+      CCACHE_DIR: ~/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_MAXSIZE: 2G
       HOMEBREW_NO_AUTO_UPDATE: 1
 
     steps:
@@ -65,7 +69,7 @@ jobs:
         run: |
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
-          brew install ninja autoconf automake autoconf-archive libtool pkg-config bison
+          brew install ninja autoconf automake autoconf-archive libtool pkg-config bison ccache
           if ! command -v pod >/dev/null 2>&1; then
             sudo gem install cocoapods
           fi
@@ -73,11 +77,13 @@ jobs:
       - name: Verify host build tools
         run: |
           export PATH="$(brew --prefix bison)/bin:$(brew --prefix)/bin:$PATH"
+          command -v ccache
           command -v ninja
           command -v bison
           command -v autoreconf
           command -v automake
           command -v autoconf
+          ccache --version
           ninja --version
           bison --version
 
@@ -91,16 +97,31 @@ jobs:
           restore-keys: |
             v2-${{ runner.os }}-pods-
 
-      - name: Cache vcpkg build output
-        uses: actions/cache@v4
+      - name: Restore vcpkg cache
+        uses: actions/cache/restore@v4
         with:
-          path: |
-            .devtools/vcpkg
-            out/ios
-          key: v2-${{ runner.os }}-vcpkg-ios-${{ env.BUILD_TYPE }}-${{ hashFiles('vcpkg/**', 'CMakeLists.txt', 'CMakePresets.json', 'cpp/**', 'bridge/engine_api/**', 'build/build_ios.sh', '.github/workflows/ios-build.yml') }}
+          path: .devtools/vcpkg
+          key: v3-${{ runner.os }}-vcpkg-ios-${{ hashFiles('vcpkg/**', 'CMakeLists.txt', 'CMakePresets.json', 'build/build_ios.sh', '.github/workflows/ios-build.yml') }}
           restore-keys: |
-            v2-${{ runner.os }}-vcpkg-ios-${{ env.BUILD_TYPE }}-
-            v2-${{ runner.os }}-vcpkg-ios-
+            v3-${{ runner.os }}-vcpkg-ios-
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.ccache
+          key: v1-${{ runner.os }}-ccache-ios-${{ env.BUILD_TYPE }}-${{ github.sha }}
+          restore-keys: |
+            v1-${{ runner.os }}-ccache-ios-${{ env.BUILD_TYPE }}-
+            v1-${{ runner.os }}-ccache-ios-
+
+      - name: Restore incremental iOS build dir
+        uses: actions/cache/restore@v4
+        with:
+          path: out/ios
+          key: v1-${{ runner.os }}-out-ios-${{ env.BUILD_TYPE }}-${{ github.sha }}
+          restore-keys: |
+            v1-${{ runner.os }}-out-ios-${{ env.BUILD_TYPE }}-
+            v1-${{ runner.os }}-out-ios-
 
       - name: Cache Cubism SDK
         uses: actions/cache@v4
@@ -199,8 +220,36 @@ jobs:
       - name: Build unsigned iOS app
         run: |
           export PATH="$(brew --prefix bison)/bin:$(brew --prefix)/bin:$PATH"
+          ccache -z || true
           chmod +x build/build_ios.sh
           ./build/build_ios.sh "${BUILD_TYPE}"
+
+      - name: Show ccache stats
+        if: always()
+        run: |
+          export PATH="$(brew --prefix bison)/bin:$(brew --prefix)/bin:$PATH"
+          ccache -s || true
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccache
+          key: v1-${{ runner.os }}-ccache-ios-${{ env.BUILD_TYPE }}-${{ github.sha }}
+
+      - name: Save incremental iOS build dir
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: out/ios
+          key: v1-${{ runner.os }}-out-ios-${{ env.BUILD_TYPE }}-${{ github.sha }}
+
+      - name: Save vcpkg cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .devtools/vcpkg
+          key: v3-${{ runner.os }}-vcpkg-ios-${{ hashFiles('vcpkg/**', 'CMakeLists.txt', 'CMakePresets.json', 'build/build_ios.sh', '.github/workflows/ios-build.yml') }}
 
       - name: Archive build artifacts
         run: |
