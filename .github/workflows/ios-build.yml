@@ -1,0 +1,106 @@
+name: iOS Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: Build configuration
+        required: true
+        default: release
+        type: choice
+        options:
+          - debug
+          - release
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ios-build.yml'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'build/build_ios.sh'
+      - 'apps/flutter_app/**'
+      - 'bridge/**'
+      - 'cpp/**'
+      - 'cmake/**'
+      - 'vcpkg/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      BUILD_TYPE: ${{ inputs.build_type || 'release' }}
+      HOMEBREW_NO_AUTO_UPDATE: 1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show tool versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          flutter --version
+          cmake --version
+
+      - name: Ensure build tools are installed
+        run: |
+          if ! command -v ninja >/dev/null 2>&1; then
+            brew install ninja
+          fi
+          if ! command -v pod >/dev/null 2>&1; then
+            sudo gem install cocoapods
+          fi
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cocoapods
+            apps/flutter_app/ios/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('apps/flutter_app/ios/Podfile.lock', 'apps/flutter_app/pubspec.lock', 'bridge/flutter_engine_bridge/ios/flutter_engine_bridge.podspec') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+
+      - name: Cache vcpkg build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            .devtools/vcpkg
+            out/ios
+          key: ${{ runner.os }}-vcpkg-ios-${{ env.BUILD_TYPE }}-${{ hashFiles('vcpkg/**', 'CMakeLists.txt', 'CMakePresets.json', 'cpp/**', 'bridge/engine_api/**', 'build/build_ios.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-ios-${{ env.BUILD_TYPE }}-
+            ${{ runner.os }}-vcpkg-ios-
+
+      - name: Build unsigned iOS app
+        run: |
+          chmod +x build/build_ios.sh
+          ./build/build_ios.sh "${BUILD_TYPE}"
+
+      - name: Archive build artifacts
+        run: |
+          mkdir -p artifacts
+          cp -R apps/flutter_app/build/ios/iphoneos/Runner.app "artifacts/Runner-${BUILD_TYPE}.app"
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-runner-app-${{ env.BUILD_TYPE }}
+          path: artifacts/Runner-${{ env.BUILD_TYPE }}.app
+          if-no-files-found: error
+          retention-days: 14
