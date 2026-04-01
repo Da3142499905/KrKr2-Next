@@ -15,7 +15,7 @@ Pod::Spec.new do |s|
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.platform         = :ios, '15.0'
+  s.platform         = :ios, '14.0'
 
   # Pre-built engine static libraries (split to avoid duplicate symbols)
   # libengine_project.a = project code (force-loaded)
