@@ -59,12 +59,20 @@ jobs:
 
       - name: Ensure build tools are installed
         run: |
-          if ! command -v ninja >/dev/null 2>&1; then
-            brew install ninja
-          fi
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          brew install ninja autoconf automake autoconf-archive libtool pkg-config
           if ! command -v pod >/dev/null 2>&1; then
             sudo gem install cocoapods
           fi
+
+      - name: Verify host build tools
+        run: |
+          export PATH="$(brew --prefix)/bin:$PATH"
+          command -v ninja
+          command -v autoreconf
+          command -v automake
+          command -v autoconf
+          ninja --version
 
       - name: Cache CocoaPods
         uses: actions/cache@v4
@@ -72,9 +80,9 @@ jobs:
           path: |
             ~/.cocoapods
             apps/flutter_app/ios/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('apps/flutter_app/ios/Podfile.lock', 'apps/flutter_app/pubspec.lock', 'bridge/flutter_engine_bridge/ios/flutter_engine_bridge.podspec') }}
+          key: v2-${{ runner.os }}-pods-${{ hashFiles('apps/flutter_app/ios/Podfile.lock', 'apps/flutter_app/pubspec.lock', 'bridge/flutter_engine_bridge/ios/flutter_engine_bridge.podspec') }}
           restore-keys: |
-            ${{ runner.os }}-pods-
+            v2-${{ runner.os }}-pods-
 
       - name: Cache vcpkg build output
         uses: actions/cache@v4
@@ -82,10 +90,10 @@ jobs:
           path: |
             .devtools/vcpkg
             out/ios
-          key: ${{ runner.os }}-vcpkg-ios-${{ env.BUILD_TYPE }}-${{ hashFiles('vcpkg/**', 'CMakeLists.txt', 'CMakePresets.json', 'cpp/**', 'bridge/engine_api/**', 'build/build_ios.sh') }}
+          key: v2-${{ runner.os }}-vcpkg-ios-${{ env.BUILD_TYPE }}-${{ hashFiles('vcpkg/**', 'CMakeLists.txt', 'CMakePresets.json', 'cpp/**', 'bridge/engine_api/**', 'build/build_ios.sh', '.github/workflows/ios-build.yml') }}
           restore-keys: |
-            ${{ runner.os }}-vcpkg-ios-${{ env.BUILD_TYPE }}-
-            ${{ runner.os }}-vcpkg-ios-
+            v2-${{ runner.os }}-vcpkg-ios-${{ env.BUILD_TYPE }}-
+            v2-${{ runner.os }}-vcpkg-ios-
 
       - name: Build unsigned iOS app
         run: |
