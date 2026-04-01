@@ -39,6 +39,9 @@ jobs:
     env:
       BUILD_TYPE: ${{ inputs.build_type || 'release' }}
       CUBISM_SDK_URL: https://cubism.live2d.com/sdk-native/bin/CubismSdkForNative-5-r.4.1.zip
+      CPPFLAGS: -DCSM_TARGET_IPHONE_ES2=1
+      CFLAGS: -DCSM_TARGET_IPHONE_ES2=1
+      CXXFLAGS: -DCSM_TARGET_IPHONE_ES2=1
       HOMEBREW_NO_AUTO_UPDATE: 1
 
     steps:
