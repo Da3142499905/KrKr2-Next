@@ -38,6 +38,7 @@ jobs:
     timeout-minutes: 120
     env:
       BUILD_TYPE: ${{ inputs.build_type || 'release' }}
+      CUBISM_SDK_URL: https://cubism.live2d.com/sdk-native/bin/CubismSdkForNative-5-r.4.1.zip
       HOMEBREW_NO_AUTO_UPDATE: 1
 
     steps:
@@ -60,19 +61,22 @@ jobs:
       - name: Ensure build tools are installed
         run: |
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
-          brew install ninja autoconf automake autoconf-archive libtool pkg-config
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          brew install ninja autoconf automake autoconf-archive libtool pkg-config bison
           if ! command -v pod >/dev/null 2>&1; then
             sudo gem install cocoapods
           fi
 
       - name: Verify host build tools
         run: |
-          export PATH="$(brew --prefix)/bin:$PATH"
+          export PATH="$(brew --prefix bison)/bin:$(brew --prefix)/bin:$PATH"
           command -v ninja
+          command -v bison
           command -v autoreconf
           command -v automake
           command -v autoconf
           ninja --version
+          bison --version
 
       - name: Cache CocoaPods
         uses: actions/cache@v4
@@ -95,8 +99,83 @@ jobs:
             v2-${{ runner.os }}-vcpkg-ios-${{ env.BUILD_TYPE }}-
             v2-${{ runner.os }}-vcpkg-ios-
 
+      - name: Cache Cubism SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            CubismSdkForNative-5-r.4.1.zip
+            cpp/plugins/cubism/Framework
+            cpp/plugins/cubism/Core/include
+            cpp/plugins/cubism/Core/lib
+          key: v1-${{ runner.os }}-cubism-5-r4.1
+
+      - name: Install Cubism SDK
+        run: |
+          if [ ! -f CubismSdkForNative-5-r.4.1.zip ]; then
+            curl -L "${CUBISM_SDK_URL}" -o CubismSdkForNative-5-r.4.1.zip
+          fi
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          import zipfile
+
+          archive = Path("CubismSdkForNative-5-r.4.1.zip")
+          target = Path("cpp/plugins/cubism")
+          required_prefixes = ["Framework/", "Core/include/", "Core/lib/"]
+
+          with zipfile.ZipFile(archive) as zf:
+              sdk_root = None
+              for name in zf.namelist():
+                  for prefix in required_prefixes:
+                      idx = name.find(prefix)
+                      if idx != -1:
+                          sdk_root = name[:idx]
+                          break
+                  if sdk_root:
+                      break
+
+              if not sdk_root:
+                  raise SystemExit("Cubism SDK root not found in archive")
+
+              for subdir in ("Framework", "Core"):
+                  path = target / subdir
+                  if path.exists():
+                      shutil.rmtree(path)
+
+              for prefix in required_prefixes:
+                  full_prefix = f"{sdk_root}{prefix}"
+                  for member in zf.infolist():
+                      if not member.filename.startswith(full_prefix):
+                          continue
+                      relative = member.filename[len(sdk_root):]
+                      if not relative:
+                          continue
+                      out_path = target / relative
+                      if member.is_dir():
+                          out_path.mkdir(parents=True, exist_ok=True)
+                          continue
+                      out_path.parent.mkdir(parents=True, exist_ok=True)
+                      with zf.open(member, "r") as src, open(out_path, "wb") as dst:
+                          shutil.copyfileobj(src, dst)
+                      mode = (member.external_attr >> 16) & 0o777
+                      if mode:
+                          os.chmod(out_path, mode)
+
+          required = [
+              target / "Framework/src/CubismFramework.hpp",
+              target / "Core/include/Live2DCubismCore.h",
+              target / "Core/lib/ios/Release-iphoneos/libLive2DCubismCore.a",
+          ]
+          missing = [str(path) for path in required if not path.exists()]
+          if missing:
+              raise SystemExit("Cubism extraction incomplete: " + ", ".join(missing))
+          print(f"Cubism SDK installed into {target}")
+          PY
+
       - name: Build unsigned iOS app
         run: |
+          export PATH="$(brew --prefix bison)/bin:$(brew --prefix)/bin:$PATH"
           chmod +x build/build_ios.sh
           ./build/build_ios.sh "${BUILD_TYPE}"
 
