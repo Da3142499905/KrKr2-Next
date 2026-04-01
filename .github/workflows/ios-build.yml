@@ -42,10 +42,7 @@ jobs:
       CPPFLAGS: -DCSM_TARGET_IPHONE_ES2=1
       CFLAGS: -DCSM_TARGET_IPHONE_ES2=1
       CXXFLAGS: -DCSM_TARGET_IPHONE_ES2=1
-      CCACHE_DIR: ~/.ccache
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_COMPILERCHECK: content
-      CCACHE_MAXSIZE: 2G
+      VCPKG_DEFAULT_BINARY_CACHE: /Users/runner/.cache/vcpkg/archives
       HOMEBREW_NO_AUTO_UPDATE: 1
 
     steps:
@@ -77,15 +74,18 @@ jobs:
       - name: Verify host build tools
         run: |
           export PATH="$(brew --prefix bison)/bin:$(brew --prefix)/bin:$PATH"
-          command -v ccache
           command -v ninja
           command -v bison
           command -v autoreconf
           command -v automake
           command -v autoconf
-          ccache --version
           ninja --version
           bison --version
+
+      - name: Prepare cache directories
+        run: |
+          mkdir -p /Users/runner/.cache/vcpkg/archives
+          ls -ld /Users/runner/.cache/vcpkg/archives
 
       - name: Cache CocoaPods
         uses: actions/cache@v4
@@ -108,19 +108,10 @@ jobs:
       - name: Restore vcpkg binary cache
         uses: actions/cache/restore@v4
         with:
-          path: ~/.cache/vcpkg/archives
+          path: /Users/runner/.cache/vcpkg/archives
           key: v1-${{ runner.os }}-vcpkg-bin-ios-${{ hashFiles('vcpkg/**', 'CMakeLists.txt', 'CMakePresets.json', 'build/build_ios.sh', '.github/workflows/ios-build.yml') }}
           restore-keys: |
             v1-${{ runner.os }}-vcpkg-bin-ios-
-
-      - name: Restore ccache
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.ccache
-          key: v1-${{ runner.os }}-ccache-ios-${{ env.BUILD_TYPE }}-${{ github.sha }}
-          restore-keys: |
-            v1-${{ runner.os }}-ccache-ios-${{ env.BUILD_TYPE }}-
-            v1-${{ runner.os }}-ccache-ios-
 
       - name: Restore incremental iOS build dir
         uses: actions/cache/restore@v4
@@ -226,24 +217,37 @@ jobs:
           PY
 
       - name: Build unsigned iOS app
+        id: build_ios
+        continue-on-error: true
         run: |
           export PATH="$(brew --prefix bison)/bin:$(brew --prefix)/bin:$PATH"
-          ccache -z || true
           chmod +x build/build_ios.sh
           ./build/build_ios.sh "${BUILD_TYPE}"
 
-      - name: Show ccache stats
+      - name: Diagnose iOS link inputs
         if: always()
         run: |
           export PATH="$(brew --prefix bison)/bin:$(brew --prefix)/bin:$PATH"
-          ccache -s || true
+          echo "===== DIAG LINK 1: Cubism archives ====="
+          find "out/ios/${BUILD_TYPE}/cpp/plugins" -maxdepth 2 -name '*.a' | sort || true
+          echo "===== DIAG LINK 2: Flutter iOS plugin libs ====="
+          find "bridge/flutter_engine_bridge/ios/Libs" -maxdepth 1 -name '*.a' | sort || true
+          echo "===== DIAG LINK 3: libengine_project Cubism symbols ====="
+          nm -gU "bridge/flutter_engine_bridge/ios/Libs/libengine_project.a" 2>/dev/null | grep "CubismFramework::StartUp\|CubismModel::GetPartCount\|CubismModel::LoadParameters\|CubismUserModel::LoadModel" | head -n 80 || true
+          echo "===== DIAG LINK 4: libengine_project members ====="
+          ar -t "bridge/flutter_engine_bridge/ios/Libs/libengine_project.a" 2>/dev/null | grep -i "Cubism\|live2d\|krkrlive2d" | head -n 120 || true
+          echo "===== DIAG LINK 5: Cubism core symbols ====="
+          find "cpp/plugins/cubism/Core/lib/ios" -name 'libLive2DCubismCore.a' -print -exec nm -gU {} \; 2>/dev/null | grep "csmGetDrawable\|csmGetParameter\|Live2D::Cubism::Core" | head -n 80 || true
 
-      - name: Save ccache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.ccache
-          key: v1-${{ runner.os }}-ccache-ios-${{ env.BUILD_TYPE }}-${{ github.sha }}
+      - name: Collect Flutter/Xcode logs
+        if: failure()
+        run: |
+          echo "===== DIAG LINK 6: Xcode DerivedData logs ====="
+          find ~/Library/Developer/Xcode/DerivedData -path '*Logs/Build*' \( -name '*.xcactivitylog' -o -name '*.log' \) | tail -n 50 || true
+          echo "===== DIAG LINK 7: Flutter build logs ====="
+          find apps/flutter_app build out -type f \( -name '*.log' -o -name '*.xcresult' \) | sort | tail -n 100 || true
+          echo "===== DIAG LINK 8: Pod build settings snippets ====="
+          grep -RIn "OTHER_LDFLAGS\|libengine_project\|libengine_vendors\|force_load" apps/flutter_app/ios build/ios bridge/flutter_engine_bridge/ios --exclude-dir=.git | head -n 200 || true
 
       - name: Save incremental iOS build dir
         if: always()
@@ -256,8 +260,14 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: ~/.cache/vcpkg/archives
+          path: /Users/runner/.cache/vcpkg/archives
           key: v1-${{ runner.os }}-vcpkg-bin-ios-${{ hashFiles('vcpkg/**', 'CMakeLists.txt', 'CMakePresets.json', 'build/build_ios.sh', '.github/workflows/ios-build.yml') }}
+
+      - name: Fail if build failed
+        if: steps.build_ios.outcome != 'success'
+        run: |
+          echo "iOS build failed"
+          exit 1
 
       - name: Save vcpkg tool cache
         if: always()
