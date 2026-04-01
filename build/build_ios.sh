@@ -178,36 +178,19 @@ while IFS= read -r -d '' lib; do
     PROJECT_LIBS+=("$lib")
 done < <(find "$CMAKE_BUILD_DIR" -name "*.a" -not -path "*/vcpkg_installed/*" -not -path "*/cpp/plugins/*" -print0)
 
-# Live2D/Cubism Core comes from the prebuilt SDK archive and must be added
-# explicitly for the final merged iOS archive.
-CUBISM_EXTRA_LIBS=()
-
-if [[ "$BUILD_TYPE_LOWER" == "debug" && -f "$PROJECT_ROOT/cpp/plugins/cubism/Core/lib/ios/Debug-iphoneos/libLive2DCubismCore.a" ]]; then
-    CUBISM_CORE_LIB="$PROJECT_ROOT/cpp/plugins/cubism/Core/lib/ios/Debug-iphoneos/libLive2DCubismCore.a"
-else
-    CUBISM_CORE_LIB="$PROJECT_ROOT/cpp/plugins/cubism/Core/lib/ios/Release-iphoneos/libLive2DCubismCore.a"
-fi
-if [[ -f "$CUBISM_CORE_LIB" ]]; then
-    CUBISM_EXTRA_LIBS+=("$CUBISM_CORE_LIB")
-fi
-
-if [[ ${#CUBISM_EXTRA_LIBS[@]} -gt 0 ]]; then
-    log_info "  Cubism extra libs: ${#CUBISM_EXTRA_LIBS[@]}"
-fi
-
 # Merge project libs into libengine_project.a
 # For psdparse: only extract its unique .o files (not already in libengine_api.a)
 MERGE_TMPDIR=$(mktemp -d)
 trap "rm -rf '$MERGE_TMPDIR'" EXIT
 
 # First, merge all project libs normally
-libtool -static -o "$MERGE_TMPDIR/libengine_project_base.a" "${PROJECT_LIBS[@]}" "${CUBISM_EXTRA_LIBS[@]}"
+libtool -static -o "$MERGE_TMPDIR/libengine_project_base.a" "${PROJECT_LIBS[@]}"
 
 # Build a set of .o names already in the project library
 ar t "$MERGE_TMPDIR/libengine_project_base.a" | sort -u > "$MERGE_TMPDIR/project_objs.txt"
 
-# Extract only unique .o files from psdparse (and other deep plugin sub-libs)
-PSDPARSE_UNIQUE_OBJS=()
+# Extract only unique .o files from plugin sub-libs and Cubism archives
+EXTRA_UNIQUE_OBJS=()
 while IFS= read -r -d '' sublib; do
     sublibname="$(basename "$sublib" .a)"
     extractdir="$MERGE_TMPDIR/extract_${sublibname}"
@@ -217,16 +200,45 @@ while IFS= read -r -d '' sublib; do
         [[ -f "$obj" ]] || continue
         objname="$(basename "$obj")"
         if ! grep -qx "$objname" "$MERGE_TMPDIR/project_objs.txt"; then
-            PSDPARSE_UNIQUE_OBJS+=("$obj")
+            EXTRA_UNIQUE_OBJS+=("$obj")
         fi
     done
 done < <(find "$CMAKE_BUILD_DIR/cpp/plugins" -mindepth 3 -name "*.a" -print0 2>/dev/null)
 
-if [[ ${#PSDPARSE_UNIQUE_OBJS[@]} -gt 0 ]]; then
-    log_info "  Plugin sub-lib unique .o files: ${#PSDPARSE_UNIQUE_OBJS[@]}"
+if [[ -f "$CMAKE_BUILD_DIR/cpp/plugins/libCubismFramework.a" ]]; then
+    extractdir="$MERGE_TMPDIR/extract_CubismFramework"
+    mkdir -p "$extractdir"
+    (cd "$extractdir" && ar x "$CMAKE_BUILD_DIR/cpp/plugins/libCubismFramework.a")
+    while IFS= read -r -d '' obj; do
+        objname="$(basename "$obj")"
+        if ! grep -qx "$objname" "$MERGE_TMPDIR/project_objs.txt"; then
+            EXTRA_UNIQUE_OBJS+=("$obj")
+        fi
+    done < <(find "$extractdir" -name "*.o" -print0)
+fi
+
+if [[ "$BUILD_TYPE_LOWER" == "debug" && -f "$PROJECT_ROOT/cpp/plugins/cubism/Core/lib/ios/Debug-iphoneos/libLive2DCubismCore.a" ]]; then
+    CUBISM_CORE_LIB="$PROJECT_ROOT/cpp/plugins/cubism/Core/lib/ios/Debug-iphoneos/libLive2DCubismCore.a"
+else
+    CUBISM_CORE_LIB="$PROJECT_ROOT/cpp/plugins/cubism/Core/lib/ios/Release-iphoneos/libLive2DCubismCore.a"
+fi
+if [[ -f "$CUBISM_CORE_LIB" ]]; then
+    extractdir="$MERGE_TMPDIR/extract_Live2DCubismCore"
+    mkdir -p "$extractdir"
+    (cd "$extractdir" && ar x "$CUBISM_CORE_LIB")
+    while IFS= read -r -d '' obj; do
+        objname="$(basename "$obj")"
+        if ! grep -qx "$objname" "$MERGE_TMPDIR/project_objs.txt"; then
+            EXTRA_UNIQUE_OBJS+=("$obj")
+        fi
+    done < <(find "$extractdir" -name "*.o" -print0)
+fi
+
+if [[ ${#EXTRA_UNIQUE_OBJS[@]} -gt 0 ]]; then
+    log_info "  Plugin/Cubism unique .o files: ${#EXTRA_UNIQUE_OBJS[@]}"
     # Merge project base + unique plugin objects
     libtool -static -o "$PLUGIN_LIBS_DIR/libengine_project.a" \
-        "$MERGE_TMPDIR/libengine_project_base.a" "${PSDPARSE_UNIQUE_OBJS[@]}"
+        "$MERGE_TMPDIR/libengine_project_base.a" "${EXTRA_UNIQUE_OBJS[@]}"
 else
     cp "$MERGE_TMPDIR/libengine_project_base.a" "$PLUGIN_LIBS_DIR/libengine_project.a"
 fi
