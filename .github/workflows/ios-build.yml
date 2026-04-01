@@ -38,10 +38,6 @@ jobs:
     timeout-minutes: 120
     env:
       BUILD_TYPE: ${{ inputs.build_type || 'release' }}
-      CUBISM_SDK_URL: https://cubism.live2d.com/sdk-native/bin/CubismSdkForNative-5-r.4.1.zip
-      CPPFLAGS: -DCSM_TARGET_IPHONE_ES2=1
-      CFLAGS: -DCSM_TARGET_IPHONE_ES2=1
-      CXXFLAGS: -DCSM_TARGET_IPHONE_ES2=1
       VCPKG_DEFAULT_BINARY_CACHE: /Users/runner/.cache/vcpkg/archives
       HOMEBREW_NO_AUTO_UPDATE: 1
 
@@ -122,100 +118,6 @@ jobs:
             v1-${{ runner.os }}-out-ios-${{ env.BUILD_TYPE }}-
             v1-${{ runner.os }}-out-ios-
 
-      - name: Cache Cubism SDK
-        uses: actions/cache@v4
-        with:
-          path: |
-            CubismSdkForNative-5-r.4.1.zip
-            cpp/plugins/cubism/Framework
-            cpp/plugins/cubism/Core/include
-            cpp/plugins/cubism/Core/lib
-          key: v1-${{ runner.os }}-cubism-5-r4.1
-
-      - name: Install Cubism SDK
-        run: |
-          if [ ! -f CubismSdkForNative-5-r.4.1.zip ]; then
-            curl -L "${CUBISM_SDK_URL}" -o CubismSdkForNative-5-r.4.1.zip
-          fi
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-          import shutil
-          import zipfile
-
-          archive = Path("CubismSdkForNative-5-r.4.1.zip")
-          target = Path("cpp/plugins/cubism")
-          required_prefixes = ["Framework/", "Core/include/", "Core/lib/"]
-
-          with zipfile.ZipFile(archive) as zf:
-              sdk_root = None
-              for name in zf.namelist():
-                  for prefix in required_prefixes:
-                      idx = name.find(prefix)
-                      if idx != -1:
-                          sdk_root = name[:idx]
-                          break
-                  if sdk_root:
-                      break
-
-              if not sdk_root:
-                  raise SystemExit("Cubism SDK root not found in archive")
-
-              for subdir in ("Framework", "Core"):
-                  path = target / subdir
-                  if path.exists():
-                      shutil.rmtree(path)
-
-              for prefix in required_prefixes:
-                  full_prefix = f"{sdk_root}{prefix}"
-                  for member in zf.infolist():
-                      if not member.filename.startswith(full_prefix):
-                          continue
-                      relative = member.filename[len(sdk_root):]
-                      if not relative:
-                          continue
-                      out_path = target / relative
-                      if member.is_dir():
-                          out_path.mkdir(parents=True, exist_ok=True)
-                          continue
-                      out_path.parent.mkdir(parents=True, exist_ok=True)
-                      with zf.open(member, "r") as src, open(out_path, "wb") as dst:
-                          shutil.copyfileobj(src, dst)
-                      mode = (member.external_attr >> 16) & 0o777
-                      if mode:
-                          os.chmod(out_path, mode)
-
-          required = [
-              target / "Framework/src/CubismFramework.hpp",
-              target / "Core/include/Live2DCubismCore.h",
-              target / "Core/lib/ios/Release-iphoneos/libLive2DCubismCore.a",
-          ]
-          missing = [str(path) for path in required if not path.exists()]
-          if missing:
-              raise SystemExit("Cubism extraction incomplete: " + ", ".join(missing))
-
-          framework_root = target / "Framework"
-          framework_src = framework_root / "src"
-
-          # Project CMake adds only cpp/plugins/cubism/Framework to include paths,
-          # while the official SDK keeps public headers and subdirectories under
-          # Framework/src. Mirror src entries into Framework so existing include
-          # directives resolve without changing repository sources.
-          for item in framework_src.iterdir():
-              link_path = framework_root / item.name
-              if link_path.exists() or link_path.is_symlink():
-                  continue
-              try:
-                  os.symlink(item.name if item.parent == framework_root else f"src/{item.name}", link_path)
-              except OSError:
-                  if item.is_dir():
-                      shutil.copytree(item, link_path)
-                  else:
-                      shutil.copy2(item, link_path)
-
-          print(f"Cubism SDK installed into {target}")
-          PY
-
       - name: Build unsigned iOS app
         id: build_ios
         continue-on-error: true
@@ -228,25 +130,21 @@ jobs:
         if: always()
         run: |
           export PATH="$(brew --prefix bison)/bin:$(brew --prefix)/bin:$PATH"
-          echo "===== DIAG LINK 1: Cubism archives ====="
-          find "out/ios/${BUILD_TYPE}/cpp/plugins" -maxdepth 2 -name '*.a' | sort || true
-          echo "===== DIAG LINK 2: Flutter iOS plugin libs ====="
+          echo "===== DIAG LINK 1: Flutter iOS plugin libs ====="
           find "bridge/flutter_engine_bridge/ios/Libs" -maxdepth 1 -name '*.a' | sort || true
-          echo "===== DIAG LINK 3: libengine_project Cubism symbols ====="
-          nm -gU "bridge/flutter_engine_bridge/ios/Libs/libengine_project.a" 2>/dev/null | grep "CubismFramework::StartUp\|CubismModel::GetPartCount\|CubismModel::LoadParameters\|CubismUserModel::LoadModel" | head -n 80 || true
-          echo "===== DIAG LINK 4: libengine_project members ====="
-          ar -t "bridge/flutter_engine_bridge/ios/Libs/libengine_project.a" 2>/dev/null | grep -i "Cubism\|live2d\|krkrlive2d" | head -n 120 || true
-          echo "===== DIAG LINK 5: Cubism core symbols ====="
-          find "cpp/plugins/cubism/Core/lib/ios" -name 'libLive2DCubismCore.a' -print -exec nm -gU {} \; 2>/dev/null | grep "csmGetDrawable\|csmGetParameter\|Live2D::Cubism::Core" | head -n 80 || true
+          echo "===== DIAG LINK 2: libengine_project symbols ====="
+          nm -gU "bridge/flutter_engine_bridge/ios/Libs/libengine_project.a" 2>/dev/null | head -n 80 || true
+          echo "===== DIAG LINK 3: libengine_project members ====="
+          ar -t "bridge/flutter_engine_bridge/ios/Libs/libengine_project.a" 2>/dev/null | head -n 120 || true
 
       - name: Collect Flutter/Xcode logs
         if: failure()
         run: |
-          echo "===== DIAG LINK 6: Xcode DerivedData logs ====="
+          echo "===== DIAG LINK 4: Xcode DerivedData logs ====="
           find ~/Library/Developer/Xcode/DerivedData -path '*Logs/Build*' \( -name '*.xcactivitylog' -o -name '*.log' \) | tail -n 50 || true
-          echo "===== DIAG LINK 7: Flutter build logs ====="
+          echo "===== DIAG LINK 5: Flutter build logs ====="
           find apps/flutter_app build out -type f \( -name '*.log' -o -name '*.xcresult' \) | sort | tail -n 100 || true
-          echo "===== DIAG LINK 8: Pod build settings snippets ====="
+          echo "===== DIAG LINK 6: Pod build settings snippets ====="
           grep -RIn "OTHER_LDFLAGS\|libengine_project\|libengine_vendors\|force_load" apps/flutter_app/ios build/ios bridge/flutter_engine_bridge/ios --exclude-dir=.git | head -n 200 || true
 
       - name: Save incremental iOS build dir
