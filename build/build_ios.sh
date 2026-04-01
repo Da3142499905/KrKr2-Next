@@ -189,7 +189,7 @@ libtool -static -o "$MERGE_TMPDIR/libengine_project_base.a" "${PROJECT_LIBS[@]}"
 # Build a set of .o names already in the project library
 ar t "$MERGE_TMPDIR/libengine_project_base.a" | sort -u > "$MERGE_TMPDIR/project_objs.txt"
 
-# Extract only unique .o files from plugin sub-libs and Cubism archives
+# Extract only unique .o files from plugin sub-libs
 EXTRA_UNIQUE_OBJS=()
 while IFS= read -r -d '' sublib; do
     sublibname="$(basename "$sublib" .a)"
@@ -205,37 +205,8 @@ while IFS= read -r -d '' sublib; do
     done
 done < <(find "$CMAKE_BUILD_DIR/cpp/plugins" -mindepth 3 -name "*.a" -print0 2>/dev/null)
 
-if [[ -f "$CMAKE_BUILD_DIR/cpp/plugins/libCubismFramework.a" ]]; then
-    extractdir="$MERGE_TMPDIR/extract_CubismFramework"
-    mkdir -p "$extractdir"
-    (cd "$extractdir" && ar x "$CMAKE_BUILD_DIR/cpp/plugins/libCubismFramework.a")
-    while IFS= read -r -d '' obj; do
-        objname="$(basename "$obj")"
-        if ! grep -qx "$objname" "$MERGE_TMPDIR/project_objs.txt"; then
-            EXTRA_UNIQUE_OBJS+=("$obj")
-        fi
-    done < <(find "$extractdir" -name "*.o" -print0)
-fi
-
-if [[ "$BUILD_TYPE_LOWER" == "debug" && -f "$PROJECT_ROOT/cpp/plugins/cubism/Core/lib/ios/Debug-iphoneos/libLive2DCubismCore.a" ]]; then
-    CUBISM_CORE_LIB="$PROJECT_ROOT/cpp/plugins/cubism/Core/lib/ios/Debug-iphoneos/libLive2DCubismCore.a"
-else
-    CUBISM_CORE_LIB="$PROJECT_ROOT/cpp/plugins/cubism/Core/lib/ios/Release-iphoneos/libLive2DCubismCore.a"
-fi
-if [[ -f "$CUBISM_CORE_LIB" ]]; then
-    extractdir="$MERGE_TMPDIR/extract_Live2DCubismCore"
-    mkdir -p "$extractdir"
-    (cd "$extractdir" && ar x "$CUBISM_CORE_LIB")
-    while IFS= read -r -d '' obj; do
-        objname="$(basename "$obj")"
-        if ! grep -qx "$objname" "$MERGE_TMPDIR/project_objs.txt"; then
-            EXTRA_UNIQUE_OBJS+=("$obj")
-        fi
-    done < <(find "$extractdir" -name "*.o" -print0)
-fi
-
 if [[ ${#EXTRA_UNIQUE_OBJS[@]} -gt 0 ]]; then
-    log_info "  Plugin/Cubism unique .o files: ${#EXTRA_UNIQUE_OBJS[@]}"
+    log_info "  Plugin unique .o files: ${#EXTRA_UNIQUE_OBJS[@]}"
     # Merge project base + unique plugin objects
     libtool -static -o "$PLUGIN_LIBS_DIR/libengine_project.a" \
         "$MERGE_TMPDIR/libengine_project_base.a" "${EXTRA_UNIQUE_OBJS[@]}"
